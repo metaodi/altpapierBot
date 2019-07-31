@@ -1,35 +1,53 @@
+# -*- coding: utf-8 -*-
+
 import telegram
-from datetime import datetime
+import datetime
 from datetime import date
 from datetime import timedelta
-from urllib.request import urlopen
-import json
+import requests
+from dotenv import load_dotenv
+import os
+from pprint import pprint
 
-bot = telegram.Bot(token='doNotCommitTokens')
+# load environment variables from .env file
+# it seems, the .env is not found in the current directory by default
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
 
-currentDate = date.today()
-currentDateAsString = currentDate.strftime("%Y-%m-%d")
 
-zip = "yourZip"
+# initialize bot
+token = os.getenv('TELEGRAM_BOT_TOKEN')
+chatId = os.getenv('TELEGRAM_CHAT_ID')
+print("Token: %s, chatId: %s" % (token, chatId))
 
-nextPaperDate = json.load(urlopen("http://openerz.metaodi.ch/api/calendar/paper.json?zip=" + zip + "&start=" + currentDateAsString + "&sort=date&offset=0&limit=1"))['result'][0]['date']
-nextCardboard = json.load(urlopen("http://openerz.metaodi.ch/api/calendar/cardboard.json?zip=" + zip + "&start=" + currentDateAsString + "&offset=0&limit=1"))['result'][0]['date']
+bot = telegram.Bot(token=token)
 
-cardboardToday = datetime.strptime(nextCardboard, "%Y-%m-%d").date() == currentDate
-paperToday = datetime.strptime(nextPaperDate, "%Y-%m-%d").date() == currentDate
-cardboardTomorrow = (datetime.strptime(nextCardboard, "%Y-%m-%d") - timedelta(days=1)).date() == currentDate
-paperTomorrow = (datetime.strptime(nextPaperDate, "%Y-%m-%d") - timedelta(days=1)).date() == currentDate
+# get date from OpenERZ API
+today = date.today()
+tomorrow = date.today() + timedelta(days=1)
+zip = os.getenv('ZIP_CODE')
+tour = os.getenv('TOUR', '')
+types = {
+    'paper': 'Altpapier',
+    'cardboard': 'Karton',
+}
+for type, descr in types.items():
+    url = (
+        "http://openerz.metaodi.ch/api/calendar.json?types=%s&zip=%s&tour=%s&start=%s&sort=date&offset=0&limit=1"
+        % (type, zip, tour, today.isoformat())
+    )
+    print("URL: %s" % url)
+    r = requests.get(url)
+    nextDateStr = r.json()['result'][0]['date']
+    nextDate = datetime.datetime.strptime(nextDateStr, '%Y-%m-%d').date()
 
-chatId = doNotCommitChatIds
+    # send message if nextDate is today or tomorrow
+    msg = ''
+    if nextDate == tomorrow:
+        msg = "Morn isch imfall %s!" % descr
+    if nextDate == today:
+        msg = "Hüt isch imfall %s!" % descr
 
-if cardboardToday and datetime.now().hour < 12:
-  bot.sendMessage(chatId, "Hüt isch imfall Karton!")
-
-if paperToday and datetime.now().hour < 12:
-  bot.sendMessage(chatId, "Hüt isch imfall Papier!")
-
-if cardboardTomorrow and datetime.now().hour > 12:
-  bot.sendMessage(chatId, "Morn isch imfall Karton!")
-
-if paperTomorrow and datetime.now().hour > 12:
-  bot.sendMessage(chatId, "Morn isch imfall Papier!")
+    print('Message: %s' % msg)
+    if msg:
+        bot.sendMessage(chatId, msg)
